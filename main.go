@@ -7,23 +7,21 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", "127.0.0.1:53", "the address of the dns server")
-	dns := flag.String("dns", "1.1.1.1", "the upstream dns server")
+	addr := flag.String("addr", ":15553", "the address of the dns server")
+	upstreamDNS := flag.String("dns", "1.1.1.1:53", "the upstream dns server")
+	defaultIp := flag.String("default", "10.1.11.111", "the default ip when no ip returned")
 	flag.Parse()
 
-	dns.HandleFunc(".", handleDNSRequest)
+	s := newDnsServer(*upstreamDNS, *defaultIp)
 
-	server := &dns.Server {
-		Addr: addr,
-		Net: "udp",
+	dns.HandleFunc(".", s.dnsHandleFunc)
+
+	server := &dns.Server{
+		Addr: *addr,
+		Net:  "udp",
 	}
 
 	if err := server.ListenAndServe(); err != nil {
 		panic(err)
 	}
-}
-
-
-func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
-	
 }
