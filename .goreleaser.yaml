@@ -20,7 +20,7 @@ builds:
     goamd64:
       - v3
       - v2
-    main: ./main
+    main: ./
     binary: tiny-dns
 
 archives:
