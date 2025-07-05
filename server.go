@@ -11,7 +11,7 @@ type dnsServer struct {
 	client      *dns.Client
 	upstreamDNS string
 	defaultIp   net.IP
-	cache       map[string]*dns.Msg
+	cache       *lru[string, *dns.Msg]
 }
 
 func newDnsServer(upstreamDNS, defaultIp string) *dnsServer {
@@ -26,7 +26,7 @@ func newDnsServer(upstreamDNS, defaultIp string) *dnsServer {
 			Net:     "udp",
 			Timeout: time.Second,
 		},
-		cache: make(map[string]*dns.Msg),
+		cache: newLRU[string, *dns.Msg](256),
 	}
 }
 
@@ -36,7 +36,7 @@ func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	if filtered, ok := d.cache[r.Question[0].Name]; ok {
+	if filtered, ok := d.cache.get(r.Question[0].Name); ok {
 		filtered.SetReply(r)
 		w.WriteMsg(filtered)
 		return
@@ -54,6 +54,7 @@ func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
 	filtered := new(dns.Msg)
 	filtered.SetReply(r)
 	filtered.Rcode = resp.Rcode
+	filtered.RecursionAvailable = resp.RecursionAvailable
 
 	for _, rr := range resp.Answer {
 		if aaaa, ok := rr.(*dns.AAAA); ok {
@@ -71,7 +72,7 @@ func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
 			},
 			A: d.defaultIp,
 		})
-		d.cache[r.Question[0].Name] = filtered
+		d.cache.put(r.Question[0].Name, filtered)
 	}
 
 	w.WriteMsg(filtered)
