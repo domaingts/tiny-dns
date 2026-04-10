@@ -37,8 +37,9 @@ func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	if filtered, ok := d.cache.get(r.Question[0].Name); ok {
-		filtered.SetReply(r)
-		w.WriteMsg(filtered)
+		cached := filtered.Copy()
+		cached.SetReply(r)
+		w.WriteMsg(cached)
 		return
 	}
 

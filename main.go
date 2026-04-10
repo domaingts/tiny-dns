@@ -9,10 +9,10 @@ import (
 func main() {
 	addr := flag.String("addr", ":15553", "the address of the dns server")
 	upstreamDNS := flag.String("dns", "1.1.1.1:53", "the upstream dns server")
-	defaultIp := flag.String("default", "10.1.11.111", "the default ip when no ip returned")
+	defaultIP := flag.String("default", "10.1.11.111", "the default ip when no ip returned")
 	flag.Parse()
 
-	s := newDnsServer(*upstreamDNS, *defaultIp)
+	s := newDnsServer(*upstreamDNS, *defaultIP)
 
 	dns.HandleFunc(".", s.dnsHandleFunc)
 

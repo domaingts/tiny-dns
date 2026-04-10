@@ -31,7 +31,7 @@ func (l *lru[K, V]) get(key K) (V, bool) {
 
 	if elem, ok := l.cache[key]; ok {
 		l.list.MoveToFront(elem)
-		return elem.Value.(entry[K, V]).value, true
+		return elem.Value.(*entry[K, V]).value, true
 	}
 
 	var zero V
@@ -42,15 +42,21 @@ func (l *lru[K, V]) put(key K, value V) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	if l.list.Len() == l.capacity {
+	if elem, ok := l.cache[key]; ok {
+		l.list.MoveToFront(elem)
+		elem.Value.(*entry[K, V]).value = value
+		return
+	}
+
+	if l.list.Len() >= l.capacity {
 		oldest := l.list.Back()
 		if oldest != nil {
 			l.list.Remove(oldest)
-			kv := oldest.Value.(entry[K, V])
+			kv := oldest.Value.(*entry[K, V])
 			delete(l.cache, kv.key)
 		}
 	}
 
-	elem := list.New().PushFront(entry[K, V]{key, value})
+	elem := l.list.PushFront(&entry[K, V]{key, value})
 	l.cache[key] = elem
 }
