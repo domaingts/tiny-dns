@@ -50,7 +50,7 @@ func main() {
 		Net:     "udp",
 		Handler: dns.HandlerFunc(s.dnsHandleFunc),
 		NotifyStartedFunc: func() {
-			log.Printf("DNS listening on %s/%s", fmt.Sprintf("%s%s", defaultAddr.String(), *addr), "udp")
+			log.Printf("DNS listening on [%s]/%s", fmt.Sprintf("%s%s", defaultAddr.String(), *addr), "udp")
 		},
 	}
 
