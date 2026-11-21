@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"log"
 	"net"
 	"net/netip"
+	"time"
 
 	"github.com/miekg/dns"
 )
@@ -22,13 +24,19 @@ func main() {
 		panic(err)
 	}
 
+	defer provider.Close()
+
 	s := newDnsServer(*upstreamDNS, *defaultIP, provider)
 
-	dns.HandleFunc(".", s.dnsHandleFunc)
+	// dns.HandleFunc(".", s.dnsHandleFunc)
 
 	server := &dns.Server{
-		Addr: *addr,
-		Net:  "udp",
+		Addr:    *addr,
+		Net:     "udp",
+		Handler: dns.HandlerFunc(s.dnsHandleFunc),
+		NotifyStartedFunc: func() {
+			log.Printf("DNS listening on %s/%s", *addr, "udp")
+		},
 	}
 
 	go func() {
@@ -46,9 +54,13 @@ func main() {
 	log.Println("SNI proxy listening on :443")
 
 	for {
-		conn, err := listener.Accept()
+		conn, err := listener.AcceptTCP()
+		log.Println(err)
 		if err != nil {
-			log.Println(err)
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 		ip := sourceIP(conn.RemoteAddr())
@@ -57,13 +69,8 @@ func main() {
 			conn.Close()
 			continue
 		}
-		tcpConn, ok := conn.(*net.TCPConn)
-		if !ok {
-			log.Println("invalid type cast")
-			continue
-		}
 
-		go handleConn(tcpConn)
+		go handleConn(conn)
 	}
 }
 
