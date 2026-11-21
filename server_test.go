@@ -13,7 +13,7 @@ func TestNewDnsServer_InvalidIP(t *testing.T) {
 			t.Fatal("expected panic for invalid IP address")
 		}
 	}()
-	newDnsServer("1.1.1.1:53", "not-an-ip")
+	newDnsServer("1.1.1.1:53", "not-an-ip", nil)
 }
 
 // func TestNewDnsServer_ValidIP(t *testing.T) {
@@ -27,7 +27,7 @@ func TestNewDnsServer_InvalidIP(t *testing.T) {
 // }
 
 func TestDnsHandleFunc_FallbackARecord(t *testing.T) {
-	s := newDnsServer("1.1.1.1:53", "10.1.11.111")
+	s := newDnsServer("1.1.1.1:53", "10.1.11.111", nil)
 
 	r := new(dns.Msg)
 	r.SetQuestion("nonexistent.example.com.", dns.TypeAAAA)
@@ -60,7 +60,7 @@ func TestDnsHandleFunc_FallbackARecord(t *testing.T) {
 }
 
 func TestDnsHandleFunc_NoQuestions(t *testing.T) {
-	s := newDnsServer("1.1.1.1:53", "10.1.11.111")
+	s := newDnsServer("1.1.1.1:53", "10.1.11.111", nil)
 
 	r := new(dns.Msg)
 	r.Id = 2
@@ -129,10 +129,10 @@ func (m *mockResponseWriter) WriteMsg(msg *dns.Msg) error {
 	return nil
 }
 
-func (m *mockResponseWriter) LocalAddr() net.Addr                { return nil }
-func (m *mockResponseWriter) RemoteAddr() net.Addr               { return nil }
-func (m *mockResponseWriter) Write([]byte) (int, error)          { return 0, nil }
-func (m *mockResponseWriter) Close() error                       { return nil }
-func (m *mockResponseWriter) TsigStatus() error                  { return nil }
-func (m *mockResponseWriter) TsigTimersOnly(bool)                {}
-func (m *mockResponseWriter) Hijack()                            {}
+func (m *mockResponseWriter) LocalAddr() net.Addr       { return nil }
+func (m *mockResponseWriter) RemoteAddr() net.Addr      { return nil }
+func (m *mockResponseWriter) Write([]byte) (int, error) { return 0, nil }
+func (m *mockResponseWriter) Close() error              { return nil }
+func (m *mockResponseWriter) TsigStatus() error         { return nil }
+func (m *mockResponseWriter) TsigTimersOnly(bool)       {}
+func (m *mockResponseWriter) Hijack()                   {}

@@ -13,9 +13,15 @@ func main() {
 	upstreamDNS := flag.String("dns", "1.1.1.1:53", "the upstream dns server")
 	tcpPort := flag.Int64("tcp", 443, "the tcp server's port")
 	defaultIP := flag.String("default", "10.1.11.111", "the default ip when no ip returned")
+	configPath := flag.String("config", "/usr/local/tiny-dns/config.json", "the config file including a white list")
 	flag.Parse()
 
-	s := newDnsServer(*upstreamDNS, *defaultIP)
+	provider, err := NewFileProvider(*configPath)
+	if err != nil {
+		panic(err)
+	}
+
+	s := newDnsServer(*upstreamDNS, *defaultIP, provider)
 
 	dns.HandleFunc(".", s.dnsHandleFunc)
 

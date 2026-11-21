@@ -4,6 +4,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"log"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,7 +15,7 @@ import (
 )
 
 type Config struct {
-	WhiteList []string `json:"white_list"`
+	WhiteList []netip.Addr `json:"white_list"`
 }
 
 type FileProvider struct {
@@ -109,8 +110,8 @@ func (f *FileProvider) reload(path string) {
 	f.updateConfig(config)
 }
 
-func (f *FileProvider) InWhiteList(address string) bool {
-	return slices.Contains(f.config.Load().WhiteList, address)
+func (f *FileProvider) InWhiteList(address netip.Addr) bool {
+	return slices.Contains(f.config.Load().WhiteList, address.Unmap())
 }
 
 func (f *FileProvider) Close() error {
@@ -129,6 +130,12 @@ func readConfig(path string) (*Config, error) {
 	err = json.Unmarshal(content, &config, json.RejectUnknownMembers(true))
 	if err != nil {
 		return nil, err
+	}
+	for i, ip := range config.WhiteList {
+		if !ip.IsValid() {
+			return nil, errors.New("invalid whitelist IP")
+		}
+		config.WhiteList[i] = ip.Unmap()
 	}
 	return &config, nil
 }

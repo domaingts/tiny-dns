@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"net/netip"
 	"slices"
 	"time"
@@ -12,10 +13,11 @@ type dnsServer struct {
 	client      *dns.Client
 	upstreamDNS string
 	defaultIp   netip.Addr
+	provider    *FileProvider
 	// cache       *lru[string, *dns.Msg]
 }
 
-func newDnsServer(upstreamDNS, defaultIp string) *dnsServer {
+func newDnsServer(upstreamDNS, defaultIp string, provider *FileProvider) *dnsServer {
 	ip, err := netip.ParseAddr(defaultIp)
 	if err != nil {
 		panic("Invalid IP address")
@@ -27,13 +29,24 @@ func newDnsServer(upstreamDNS, defaultIp string) *dnsServer {
 			Net:     "udp",
 			Timeout: time.Second,
 		},
+		provider: provider,
 		// cache: newLRU[string, *dns.Msg](256),
 	}
 }
 
 func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
-	if len(r.Question) < 1 {
-		dns.HandleFailed(w, r)
+	ip := sourceIP(w)
+
+	if !ip.IsValid() || !d.provider.InWhiteList(ip) {
+		msg := new(dns.Msg)
+		msg.SetRcode(r, dns.RcodeRefused)
+		w.WriteMsg(msg)
+		return
+	}
+	if len(r.Question) != 1 {
+		msg := new(dns.Msg)
+		msg.SetRcode(r, dns.RcodeFormatError)
+		w.WriteMsg(msg)
 		return
 	}
 
@@ -130,4 +143,15 @@ func (d *dnsServer) defaultAnswer(name string) dns.RR {
 		}
 	}
 	return rr
+}
+
+func sourceIP(w dns.ResponseWriter) netip.Addr {
+	switch addr := w.RemoteAddr().(type) {
+	case *net.UDPAddr:
+		return addr.AddrPort().Addr().Unmap()
+	case *net.TCPAddr:
+		return addr.AddrPort().Addr().Unmap()
+	default:
+		return netip.Addr{}
+	}
 }
