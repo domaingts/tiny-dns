@@ -20,7 +20,7 @@ func newDnsServer(upstreamDNS, defaultIp string) *dnsServer {
 		panic("Invalid IP address")
 	}
 	return &dnsServer{
-		defaultIp:   ip.To4(),
+		defaultIp:   ip.To16(),
 		upstreamDNS: upstreamDNS,
 		client: &dns.Client{
 			Net:     "udp",
@@ -64,14 +64,14 @@ func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	if len(filtered.Answer) == 0 {
-		filtered.Answer = append(filtered.Answer, &dns.A{
+		filtered.Answer = append(filtered.Answer, &dns.AAAA{
 			Hdr: dns.RR_Header{
 				Name:   r.Question[0].Name,
-				Rrtype: dns.TypeA,
+				Rrtype: dns.TypeAAAA,
 				Class:  dns.ClassINET,
 				Ttl:    300,
 			},
-			A: d.defaultIp,
+			AAAA: d.defaultIp,
 		})
 		d.cache.put(r.Question[0].Name, filtered)
 	}

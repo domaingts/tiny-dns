@@ -11,6 +11,7 @@ import (
 func main() {
 	addr := flag.String("addr", ":53", "the address of the dns server")
 	upstreamDNS := flag.String("dns", "1.1.1.1:53", "the upstream dns server")
+	tcpPort := flag.Int64("tcp", 443, "the tcp server's port")
 	defaultIP := flag.String("default", "10.1.11.111", "the default ip when no ip returned")
 	flag.Parse()
 
@@ -29,7 +30,7 @@ func main() {
 		}
 	}()
 
-	listener, err := net.ListenTCP("tcp", &net.TCPAddr{Port: 8443})
+	listener, err := net.ListenTCP("tcp", &net.TCPAddr{Port: int(*tcpPort)})
 	if err != nil {
 		log.Fatal(err)
 	}
