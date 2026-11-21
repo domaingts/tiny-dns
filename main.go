@@ -70,8 +70,8 @@ func main() {
 
 	for {
 		conn, err := listener.AcceptTCP()
-		log.Println(err)
 		if err != nil {
+			log.Println(err)
 			if errors.Is(err, net.ErrClosed) {
 				return
 			}
