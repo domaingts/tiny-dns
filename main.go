@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"net"
+	"net/netip"
 
 	"github.com/miekg/dns"
 )
@@ -50,7 +51,12 @@ func main() {
 			log.Println(err)
 			continue
 		}
-
+		ip := sourceIP(conn.RemoteAddr())
+		if !ip.IsValid() || !provider.InWhiteList(ip) {
+			log.Printf("unknown ip: %s\n", ip.String())
+			conn.Close()
+			continue
+		}
 		tcpConn, ok := conn.(*net.TCPConn)
 		if !ok {
 			log.Println("invalid type cast")
@@ -58,5 +64,16 @@ func main() {
 		}
 
 		go handleConn(tcpConn)
+	}
+}
+
+func sourceIP(remoteAddr net.Addr) netip.Addr {
+	switch addr := remoteAddr.(type) {
+	case *net.UDPAddr:
+		return addr.AddrPort().Addr().Unmap()
+	case *net.TCPAddr:
+		return addr.AddrPort().Addr().Unmap()
+	default:
+		return netip.Addr{}
 	}
 }

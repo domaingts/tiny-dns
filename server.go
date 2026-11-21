@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net"
 	"net/netip"
 	"slices"
@@ -35,18 +36,18 @@ func newDnsServer(upstreamDNS, defaultIp string, provider *FileProvider) *dnsSer
 }
 
 func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
-	ip := sourceIP(w)
+	ip := sourceIP(w.RemoteAddr())
 
 	if !ip.IsValid() || !d.provider.InWhiteList(ip) {
 		msg := new(dns.Msg)
 		msg.SetRcode(r, dns.RcodeRefused)
-		w.WriteMsg(msg)
+		writeResponse(w, r, msg)
 		return
 	}
 	if len(r.Question) != 1 {
 		msg := new(dns.Msg)
 		msg.SetRcode(r, dns.RcodeFormatError)
-		w.WriteMsg(msg)
+		writeResponse(w, r, msg)
 		return
 	}
 
@@ -62,7 +63,7 @@ func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
 		q.Qclass != dns.ClassINET ||
 		resp.Rcode != dns.RcodeSuccess ||
 		resp.Truncated {
-		w.WriteMsg(resp)
+		writeResponse(w, r, resp)
 		return
 	}
 
@@ -72,7 +73,7 @@ func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
 	})
 
 	if hasIPv6 || !d.defaultIp.Is6() {
-		w.WriteMsg(resp)
+		writeResponse(w, r, resp)
 		return
 	}
 
@@ -90,7 +91,7 @@ func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
 	})
 
 	if v4resp.Rcode != dns.RcodeSuccess || v4resp.Truncated || !hasIPv4 {
-		w.WriteMsg(resp)
+		writeResponse(w, r, resp)
 		return
 	}
 
@@ -100,7 +101,7 @@ func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
 	msg.Answer = []dns.RR{
 		d.defaultAnswer(q.Name),
 	}
-	w.WriteMsg(msg)
+	writeResponse(w, r, msg)
 }
 
 func (d *dnsServer) exchange(msg *dns.Msg) (*dns.Msg, error) {
@@ -145,13 +146,31 @@ func (d *dnsServer) defaultAnswer(name string) dns.RR {
 	return rr
 }
 
-func sourceIP(w dns.ResponseWriter) netip.Addr {
-	switch addr := w.RemoteAddr().(type) {
-	case *net.UDPAddr:
-		return addr.AddrPort().Addr().Unmap()
-	case *net.TCPAddr:
-		return addr.AddrPort().Addr().Unmap()
-	default:
-		return netip.Addr{}
+func writeResponse(w dns.ResponseWriter, r, resp *dns.Msg) {
+	const maxUDPSize = 1232
+
+	size := dns.MinMsgSize
+
+	if _, ok := w.RemoteAddr().(*net.UDPAddr); ok {
+		size = dns.MinMsgSize
+
+		if opt := r.IsEdns0(); opt != nil {
+			size = min(
+				maxUDPSize,
+				max(size, int(opt.UDPSize())),
+			)
+
+			if resp.IsEdns0() == nil {
+				resp.SetEdns0(maxUDPSize, opt.Do())
+			}
+		}
+
+		if _, ok := w.RemoteAddr().(*net.UDPAddr); ok {
+			resp.Truncate(size)
+		}
+	}
+
+	if err := w.WriteMsg(resp); err != nil {
+		log.Println("write DNS response:", err)
 	}
 }
