@@ -1,7 +1,8 @@
 package main
 
 import (
-	"net"
+	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/miekg/dns"
@@ -10,36 +11,29 @@ import (
 type dnsServer struct {
 	client      *dns.Client
 	upstreamDNS string
-	defaultIp   net.IP
-	cache       *lru[string, *dns.Msg]
+	defaultIp   netip.Addr
+	// cache       *lru[string, *dns.Msg]
 }
 
 func newDnsServer(upstreamDNS, defaultIp string) *dnsServer {
-	ip := net.ParseIP(defaultIp)
-	if ip == nil {
+	ip, err := netip.ParseAddr(defaultIp)
+	if err != nil {
 		panic("Invalid IP address")
 	}
 	return &dnsServer{
-		defaultIp:   ip.To16(),
+		defaultIp:   ip,
 		upstreamDNS: upstreamDNS,
 		client: &dns.Client{
 			Net:     "udp",
 			Timeout: time.Second,
 		},
-		cache: newLRU[string, *dns.Msg](256),
+		// cache: newLRU[string, *dns.Msg](256),
 	}
 }
 
 func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
 	if len(r.Question) < 1 {
 		dns.HandleFailed(w, r)
-		return
-	}
-
-	if filtered, ok := d.cache.get(r.Question[0].Name); ok {
-		cached := filtered.Copy()
-		cached.SetReply(r)
-		w.WriteMsg(cached)
 		return
 	}
 
@@ -57,24 +51,40 @@ func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
 	filtered.Rcode = resp.Rcode
 	filtered.RecursionAvailable = resp.RecursionAvailable
 
-	for _, rr := range resp.Answer {
-		if aaaa, ok := rr.(*dns.AAAA); ok {
-			filtered.Answer = append(filtered.Answer, aaaa)
-		}
-	}
+	answers := slices.Clone(resp.Answer)
 
-	if len(filtered.Answer) == 0 {
-		filtered.Answer = append(filtered.Answer, &dns.AAAA{
+	if !slices.ContainsFunc(answers, func(rr dns.RR) bool {
+		_, ok := rr.(*dns.AAAA)
+		return ok
+	}) {
+		answers = append(answers, d.defaultAnswer(r.Question[0].Name))
+	}
+	filtered.Answer = answers
+	w.WriteMsg(filtered)
+}
+
+func (d *dnsServer) defaultAnswer(name string) dns.RR {
+	var rr dns.RR
+	if d.defaultIp.Is4() {
+		rr = &dns.A{
 			Hdr: dns.RR_Header{
-				Name:   r.Question[0].Name,
+				Name:   name,
+				Rrtype: dns.TypeA,
+				Class:  dns.ClassINET,
+				Ttl:    300,
+			},
+			A: d.defaultIp.AsSlice(),
+		}
+	} else {
+		rr = &dns.AAAA{
+			Hdr: dns.RR_Header{
+				Name:   name,
 				Rrtype: dns.TypeAAAA,
 				Class:  dns.ClassINET,
 				Ttl:    300,
 			},
-			AAAA: d.defaultIp,
-		})
-		d.cache.put(r.Question[0].Name, filtered)
+			AAAA: d.defaultIp.AsSlice(),
+		}
 	}
-
-	w.WriteMsg(filtered)
+	return rr
 }
