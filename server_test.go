@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/miekg/dns"
@@ -13,7 +14,7 @@ func TestNewDnsServer_InvalidIP(t *testing.T) {
 			t.Fatal("expected panic for invalid IP address")
 		}
 	}()
-	newDnsServer("1.1.1.1:53", "not-an-ip", nil)
+	newDnsServer("1.1.1.1:53", netip.Addr{}, nil)
 }
 
 // func TestNewDnsServer_ValidIP(t *testing.T) {
@@ -27,7 +28,7 @@ func TestNewDnsServer_InvalidIP(t *testing.T) {
 // }
 
 func TestDnsHandleFunc_FallbackARecord(t *testing.T) {
-	s := newDnsServer("1.1.1.1:53", "10.1.11.111", nil)
+	s := newDnsServer("1.1.1.1:53", netip.Addr{}, nil)
 
 	r := new(dns.Msg)
 	r.SetQuestion("nonexistent.example.com.", dns.TypeAAAA)
@@ -60,7 +61,7 @@ func TestDnsHandleFunc_FallbackARecord(t *testing.T) {
 }
 
 func TestDnsHandleFunc_NoQuestions(t *testing.T) {
-	s := newDnsServer("1.1.1.1:53", "10.1.11.111", nil)
+	s := newDnsServer("1.1.1.1:53", netip.Addr{}, nil)
 
 	r := new(dns.Msg)
 	r.Id = 2

@@ -3,9 +3,13 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
+	"io"
 	"log"
 	"net"
+	"net/http"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/miekg/dns"
@@ -15,9 +19,20 @@ func main() {
 	addr := flag.String("addr", ":53", "the address of the dns server")
 	upstreamDNS := flag.String("dns", "1.1.1.1:53", "the upstream dns server")
 	tcpPort := flag.Int64("tcp", 443, "the tcp server's port")
-	defaultIP := flag.String("default", "10.1.11.111", "the default ip when no ip returned")
+	defaultIP := flag.String("default", "", "the default ip when no ip returned")
 	configPath := flag.String("config", "/usr/local/tiny-dns/config.json", "the config file including a white list")
 	flag.Parse()
+
+	var defaultAddr netip.Addr
+	var err error
+	if *defaultIP != "" {
+		defaultAddr, err = netip.ParseAddr(*defaultIP)
+	} else {
+		defaultAddr, err = getPublicIpv6()
+	}
+	if err != nil {
+		panic(err)
+	}
 
 	provider, err := NewFileProvider(*configPath)
 	if err != nil {
@@ -26,7 +41,7 @@ func main() {
 
 	defer provider.Close()
 
-	s := newDnsServer(*upstreamDNS, *defaultIP, provider)
+	s := newDnsServer(*upstreamDNS, defaultAddr, provider)
 
 	// dns.HandleFunc(".", s.dnsHandleFunc)
 
@@ -35,7 +50,7 @@ func main() {
 		Net:     "udp",
 		Handler: dns.HandlerFunc(s.dnsHandleFunc),
 		NotifyStartedFunc: func() {
-			log.Printf("DNS listening on %s/%s", *addr, "udp")
+			log.Printf("DNS listening on %s/%s", fmt.Sprintf("%s%s", defaultAddr.String(), *addr), "udp")
 		},
 	}
 
@@ -83,4 +98,30 @@ func sourceIP(remoteAddr net.Addr) netip.Addr {
 	default:
 		return netip.Addr{}
 	}
+}
+
+func getPublicIpv6() (netip.Addr, error) {
+	url := "https://api6.ipify.org"
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+	resp, err := client.Get(url)
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return netip.Addr{}, fmt.Errorf(
+			"unexpected status: %d", resp.StatusCode,
+		)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 128))
+	if err != nil {
+		return netip.Addr{}, err
+	}
+
+	return netip.ParseAddr(strings.TrimSpace(string(data)))
 }

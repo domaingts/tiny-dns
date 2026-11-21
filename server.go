@@ -18,13 +18,9 @@ type dnsServer struct {
 	// cache       *lru[string, *dns.Msg]
 }
 
-func newDnsServer(upstreamDNS, defaultIp string, provider *FileProvider) *dnsServer {
-	ip, err := netip.ParseAddr(defaultIp)
-	if err != nil {
-		panic("Invalid IP address")
-	}
+func newDnsServer(upstreamDNS string, defaultIp netip.Addr, provider *FileProvider) *dnsServer {
 	return &dnsServer{
-		defaultIp:   ip.Unmap(),
+		defaultIp:   defaultIp.Unmap(),
 		upstreamDNS: upstreamDNS,
 		client: &dns.Client{
 			Net:     "udp",
