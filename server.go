@@ -21,7 +21,7 @@ func newDnsServer(upstreamDNS, defaultIp string) *dnsServer {
 		panic("Invalid IP address")
 	}
 	return &dnsServer{
-		defaultIp:   ip,
+		defaultIp:   ip.Unmap(),
 		upstreamDNS: upstreamDNS,
 		client: &dns.Client{
 			Net:     "udp",
@@ -37,30 +37,73 @@ func (d *dnsServer) dnsHandleFunc(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	msg := new(dns.Msg)
-	msg.SetQuestion(r.Question[0].Name, dns.TypeAAAA)
+	q := r.Question[0]
 
-	resp, _, err := d.client.Exchange(msg, d.upstreamDNS)
+	resp, err := d.exchange(r)
 	if err != nil {
 		dns.HandleFailed(w, r)
 		return
 	}
 
-	filtered := new(dns.Msg)
-	filtered.SetReply(r)
-	filtered.Rcode = resp.Rcode
-	filtered.RecursionAvailable = resp.RecursionAvailable
+	if q.Qtype != dns.TypeAAAA ||
+		q.Qclass != dns.ClassINET ||
+		resp.Rcode != dns.RcodeSuccess ||
+		resp.Truncated {
+		w.WriteMsg(resp)
+		return
+	}
 
-	answers := slices.Clone(resp.Answer)
-
-	if !slices.ContainsFunc(answers, func(rr dns.RR) bool {
+	hasIPv6 := slices.ContainsFunc(resp.Answer, func(rr dns.RR) bool {
 		_, ok := rr.(*dns.AAAA)
 		return ok
-	}) {
-		answers = append(answers, d.defaultAnswer(r.Question[0].Name))
+	})
+
+	if hasIPv6 || !d.defaultIp.Is6() {
+		w.WriteMsg(resp)
+		return
 	}
-	filtered.Answer = answers
-	w.WriteMsg(filtered)
+
+	query := r.Copy()
+	query.Question[0].Qtype = dns.TypeA
+	v4resp, err := d.exchange(query)
+	if err != nil {
+		dns.HandleFailed(w, r)
+		return
+	}
+
+	hasIPv4 := slices.ContainsFunc(v4resp.Answer, func(rr dns.RR) bool {
+		_, ok := rr.(*dns.A)
+		return ok
+	})
+
+	if v4resp.Rcode != dns.RcodeSuccess || v4resp.Truncated || !hasIPv4 {
+		w.WriteMsg(resp)
+		return
+	}
+
+	msg := new(dns.Msg)
+	msg.SetReply(r)
+	msg.RecursionAvailable = resp.RecursionAvailable
+	msg.Answer = []dns.RR{
+		d.defaultAnswer(q.Name),
+	}
+	w.WriteMsg(msg)
+}
+
+func (d *dnsServer) exchange(msg *dns.Msg) (*dns.Msg, error) {
+	resp, _, err := d.client.Exchange(msg, d.upstreamDNS)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.Truncated {
+		client := *d.client
+		client.Net = "tcp"
+
+		resp, _, err = client.Exchange(msg, d.upstreamDNS)
+	}
+
+	return resp, err
 }
 
 func (d *dnsServer) defaultAnswer(name string) dns.RR {
@@ -71,7 +114,7 @@ func (d *dnsServer) defaultAnswer(name string) dns.RR {
 				Name:   name,
 				Rrtype: dns.TypeA,
 				Class:  dns.ClassINET,
-				Ttl:    300,
+				Ttl:    60,
 			},
 			A: d.defaultIp.AsSlice(),
 		}
@@ -81,7 +124,7 @@ func (d *dnsServer) defaultAnswer(name string) dns.RR {
 				Name:   name,
 				Rrtype: dns.TypeAAAA,
 				Class:  dns.ClassINET,
-				Ttl:    300,
+				Ttl:    60,
 			},
 			AAAA: d.defaultIp.AsSlice(),
 		}
