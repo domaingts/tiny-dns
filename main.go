@@ -2,12 +2,14 @@ package main
 
 import (
 	"flag"
+	"log"
+	"net"
 
 	"github.com/miekg/dns"
 )
 
 func main() {
-	addr := flag.String("addr", ":15553", "the address of the dns server")
+	addr := flag.String("addr", ":53", "the address of the dns server")
 	upstreamDNS := flag.String("dns", "1.1.1.1:53", "the upstream dns server")
 	defaultIP := flag.String("default", "10.1.11.111", "the default ip when no ip returned")
 	flag.Parse()
@@ -21,10 +23,33 @@ func main() {
 		Net:  "udp",
 	}
 
+	go func() {
+		if err := server.ListenAndServe(); err != nil {
+			panic(err)
+		}
+	}()
 
-	
+	listener, err := net.ListenTCP("tcp", &net.TCPAddr{Port: 8443})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer listener.Close()
 
-	if err := server.ListenAndServe(); err != nil {
-		panic(err)
+	log.Println("SNI proxy listening on :443")
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		tcpConn, ok := conn.(*net.TCPConn)
+		if !ok {
+			log.Println("invalid type cast")
+			continue
+		}
+
+		go handleConn(tcpConn)
 	}
 }
